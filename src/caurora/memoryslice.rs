@@ -20,6 +20,10 @@ impl MemorySlice {
         self.memory.push(oc.repr())
     }
 
+    pub fn push_raw(&mut self, oc: u16) {
+        self.memory.push(oc)
+    }
+
     pub fn line_end(&mut self) {
         let linelocation:isize = self.memory.len() as isize -1;
         if linelocation < 0 {

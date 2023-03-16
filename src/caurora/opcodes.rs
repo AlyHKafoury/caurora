@@ -23,7 +23,9 @@ pub enum OpCode {
     SetLocalVar,
     GetLocalVar,
     Jmp,
+    JmpTrue,
     JmpFalse,
+    Loop,
     Panic,
     Return
 }

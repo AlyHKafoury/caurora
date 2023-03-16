@@ -167,9 +167,24 @@ impl VM<'_> {
                         _ => panic!("Top of the stack is not a bool for jmp: {:#?} \n  stack: {:#?}", opcode, self.stack)
                     }
                 }
+                OpCode::JmpTrue => {
+                    let steps = self.advance_and_read();
+                    match self.stack.last().unwrap().clone() {
+                        Value::Bool(b) => {
+                            if b == true {
+                                self.ip += steps as usize;
+                            }
+                        }
+                        _ => panic!("Top of the stack is not a bool for jmp: {:#?} \n  stack: {:#?}", opcode, self.stack)
+                    }
+                }
                 OpCode::Jmp => {
                     let steps = self.advance_and_read();
                     self.ip += steps as usize;
+                }
+                OpCode::Loop => {
+                    let steps = self.advance_and_read();
+                    self.ip -= steps as usize;       
                 }
                 OpCode::Return => {
                     println!("Return");

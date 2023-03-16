@@ -107,11 +107,11 @@ impl Compiler {
         self.previous = self.current;
         loop {
             self.current = self.scanner.scan_token();
-            println!(
-                "Current Token <{}> {:#?}",
-                self.get_token_name(),
-                &self.current
-            );
+            // println!(
+            //     "Current Token <{}> {:#?}",
+            //     self.get_token_name(),
+            //     &self.current
+            // );
             match self.current.tokentype {
                 TokenType::NewLine => {
                     self.memory.line_end();
@@ -165,6 +165,23 @@ impl Compiler {
         self.parse_precedence(Precedence::Assignment.repr());
     }
 
+    fn and_op(&mut self) {
+        self.logical_op(Precedence::And, OpCode::JmpFalse)
+    }
+
+    fn or_op(&mut self) {
+        self.logical_op(Precedence::Or, OpCode::JmpTrue)
+    }
+
+    fn logical_op(&mut self, prec: Precedence, jmp: OpCode) {
+        let end_jmp = self.push_jmp(jmp);
+
+        self.memory.push(OpCode::Pop);
+        self.parse_precedence(prec.repr());
+
+        self.patch_address(end_jmp);
+    }
+
     fn infix(&mut self, can_assign: bool) -> Option<()> {
         match self.previous.tokentype {
             TokenType::Minus => self.binary(can_assign),
@@ -177,6 +194,8 @@ impl Compiler {
             TokenType::GreaterEqual => self.binary(can_assign),
             TokenType::Less => self.binary(can_assign),
             TokenType::LessEqual => self.binary(can_assign),
+            TokenType::And => self.and_op(),
+            TokenType::Or => self.or_op(),
             _ => {
                 return None;
             }
@@ -242,11 +261,11 @@ impl Compiler {
     }
 
     fn parse_precedence(&mut self, precedence: u16) {
-        print!(
-            "Starting preced at <{}> {:#?}",
-            self.get_token_name(),
-            self.current
-        );
+        // print!(
+        //     "Starting preced at <{}> {:#?}",
+        //     self.get_token_name(),
+        //     self.current
+        // );
         self.advance();
         let can_assign = precedence <= Precedence::Assignment.repr();
         match self.prefix(can_assign) {
@@ -266,11 +285,11 @@ impl Compiler {
                 self.current, self.previous
             )
         }
-        print!(
-            "Ending preced at <{}> {:#?}",
-            self.get_token_name(),
-            self.current
-        );
+        // print!(
+        //     "Ending preced at <{}> {:#?}",
+        //     self.get_token_name(),
+        //     self.current
+        // );
     }
 
     fn get_rule(&self, op: TokenType) -> Precedence {
@@ -285,6 +304,8 @@ impl Compiler {
             TokenType::GreaterEqual => Precedence::Comparison,
             TokenType::Less => Precedence::Comparison,
             TokenType::LessEqual => Precedence::Comparison,
+            TokenType::And => Precedence::And,
+            TokenType::Or => Precedence::Or,
             _ => Precedence::None,
         }
     }
@@ -400,6 +421,8 @@ impl Compiler {
             self.print_statement();
         } else if self.match_token(TokenType::If) {
             self.if_statement();
+        } else if self.match_token(TokenType::While) {
+            self.while_statement();
         } else if self.match_token(TokenType::LeftBrace) {
             self.begin_scope();
             self.block();
@@ -423,6 +446,29 @@ impl Compiler {
         }
         self.patch_address(else_address);
         self.memory.push(OpCode::Pop);
+    }
+
+    fn while_statement(&mut self) {
+        let loop_start = self.memory.get_memory_size();
+        println!("LOOOP START {}", loop_start);
+        self.consume(TokenType::LeftParen, "expect '(' after 'if'.");
+        self.expression();
+        self.consume(TokenType::RightParen, "expect ')' after condition.");
+        
+        let end_address = self.push_jmp(OpCode::JmpFalse);
+        self.memory.push(OpCode::Pop);
+        self.statement();
+        self.push_loop(loop_start);
+
+        self.patch_address(end_address);
+        self.memory.push(OpCode::Pop);
+    }
+
+    fn push_loop(&mut self, loop_start: usize) {
+        self.memory.push(OpCode::Loop);
+        let steps = self.memory.get_memory_size() - loop_start + 1;
+        println!("==============jmping to {} {}", steps, self.memory.get_memory_size());
+        self.memory.push_raw(steps as u16);
     }
 
     fn patch_address(&mut self, jmp_address: usize) {
