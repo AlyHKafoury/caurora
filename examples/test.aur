@@ -1,0 +1,5 @@
+"Hello " + "World!"
+"hello" == "hello"
+!(5 - 4 > 3 * 2 == !nil)
+!true + false
+-12.3 + 24 / 2

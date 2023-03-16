@@ -1,0 +1,11 @@
+var a = 1;
+{
+    var a = 5;
+    var b;
+    var c;
+    b = 2 + a;
+    c = 3;
+    print a;
+    print b;
+}
+print a;
