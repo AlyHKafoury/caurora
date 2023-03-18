@@ -36,6 +36,7 @@ impl Precedence {
 struct Local {
     name: Token,
     depth: usize,
+    func_depth: usize,
 }
 
 pub struct Compiler {
@@ -47,7 +48,7 @@ pub struct Compiler {
     scanner: Scanner<'static>,
     locals: Vec<Local>,
     scope_depth: usize,
-    func_returns: Vec<bool>,
+    func_returns: usize,
 }
 
 impl Compiler {
@@ -71,7 +72,7 @@ impl Compiler {
             scanner,
             locals: Vec::<Local>::new(),
             scope_depth: 0,
-            func_returns: Vec::<bool>::new(),
+            func_returns: 0,
         }
     }
 
@@ -227,6 +228,7 @@ impl Compiler {
     fn call_func(&mut self) {
         self.memory.push(OpCode::PopStoreTmp);
 
+        self.func_returns += 1;
         let mut args = 0;
         while !self.match_token(TokenType::RightParen) {
             self.expression();
@@ -239,6 +241,7 @@ impl Compiler {
 
         self.memory.push(OpCode::Call);
         self.memory.push_raw(args as u16);
+        self.func_returns -= 1;
     }
 
     fn identifier(&mut self, can_assign: bool) {
@@ -442,10 +445,13 @@ impl Compiler {
         let local_var = self.previous;
         let global_var = self.parse_identifier(self.previous);
         let func_address = self.memory.get_memory_size() + 6;
-        
+
         self.begin_scope();
         let mut arity = 0;
-        self.consume(TokenType::LeftParen, "expect '(' after 'function identifier'.");
+        self.consume(
+            TokenType::LeftParen,
+            "expect '(' after 'function identifier'.",
+        );
         while !self.match_token(TokenType::RightParen) {
             self.param_declaration();
             arity += 1;
@@ -480,6 +486,7 @@ impl Compiler {
         self.locals.push(Local {
             name: name,
             depth: self.scope_depth,
+            func_depth: self.func_returns,
         });
     }
 
@@ -506,17 +513,13 @@ impl Compiler {
     }
 
     fn return_statement(&mut self) {
-        self.func_returns.pop().unwrap();
-        self.func_returns.push(true);
         if self.match_token(TokenType::SemiColon) {
-            println!("R1 ENDSCOPE CALLED {:#?}", self.previous);
             self.return_scope();
             self.memory.push(OpCode::Return);
         } else {
             self.expression();
             self.memory.push(OpCode::PopStoreTmp);
             self.consume(TokenType::SemiColon, "expected ; after return value");
-            println!("R2 ENDSCOPE CALLED {:#?}", self.previous);
             self.return_scope();
             self.memory.push(OpCode::Return);
         }
@@ -524,18 +527,18 @@ impl Compiler {
 
     fn function(&mut self) {
         let func_end = self.func_address_declar();
-        self.func_returns.push(false);
-        println!("LOCALS ========== \n {:#?} \n LOCALS ==============", self.locals);
-        self.consume(TokenType::LeftBrace, "expect '{' after 'function parameters'.");
+        self.func_returns += 1;
+        self.consume(
+            TokenType::LeftBrace,
+            "expect '{' after 'function parameters'.",
+        );
 
         self.block();
-        if !self.func_returns.last().unwrap() {
-            self.end_scope();
-            self.memory.push(OpCode::Return);
-            println!("F ENDSCOPE CALLED {:#?}", self.previous);
-        }
-        self.func_returns.pop().unwrap();
+        self.end_scope();
+        self.memory.push(OpCode::Return);
+
         self.patch_address(func_end);
+        self.func_returns -= 1;
     }
 
     fn for_statement(&mut self) {
@@ -649,15 +652,22 @@ impl Compiler {
     }
 
     fn return_scope(&mut self) {
-        println!("current depth {}", self.scope_depth);
-        while self.locals.len() > 0 && self.locals.last().unwrap().depth > self.scope_depth - 1 {
+        println!(
+            "func depth {} \n LOCALS \n {:#?}",
+            self.func_returns, self.locals
+        );
+        for i in 0..self.locals.len()
+        {
+            if !(self.locals[i].depth > self.scope_depth - 1
+            || self.locals[i].func_depth == (self.func_returns - 1)) {
+                break;
+            }
+            println!("current depth POP 1");
             self.memory.push(OpCode::Pop);
-            self.locals.pop();
         }
     }
 
     fn end_scope(&mut self) {
-        println!("current depth {}", self.scope_depth);
         self.scope_depth -= 1;
         while self.locals.len() > 0 && self.locals.last().unwrap().depth > self.scope_depth {
             self.memory.push(OpCode::Pop);
