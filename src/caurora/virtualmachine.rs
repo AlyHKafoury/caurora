@@ -147,7 +147,11 @@ impl VM<'_> {
                 }
                 OpCode::GetLocalVar => {
                     let local_location = match self.get_next_constant() {
-                        Value::Number(x) => self.ip_stack.len() - 1 + (x as usize),
+                        Value::Number(x) => if self.ip_stack.len() > 0 {
+                            self.ip_stack.len() - 1 + (x as usize)
+                        } else {
+                            x as usize
+                        },
                         _ => panic!("Expected Number pointer for the local variable {:#?}", opcode)
                     };
                     println!("getting local value of : {:#?}", self.stack[local_location].clone());
@@ -155,7 +159,11 @@ impl VM<'_> {
                 }
                 OpCode::SetLocalVar => {
                     let local_location = match self.get_next_constant() {
-                        Value::Number(x) => self.ip_stack.len() - 1 + (x as usize),
+                        Value::Number(x) => if self.ip_stack.len() > 0 {
+                            self.ip_stack.len() - 1 + (x as usize)
+                        } else {
+                            x as usize
+                        },
                         _ => panic!("Expected Number pointer for the local variable {:#?}", opcode)
                     };
                     println!("setting local value of : {:#?}", self.stack[local_location].clone());
