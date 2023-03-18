@@ -27,6 +27,9 @@ pub enum OpCode {
     JmpFalse,
     Loop,
     Panic,
+    PopStoreTmp,
+    Call,
+    Eof,
     Return
 }
 

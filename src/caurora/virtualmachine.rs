@@ -16,6 +16,9 @@ pub struct VM<'a> {
     pub ip: usize,
     pub stack: Vec<Value>,
     pub globals: HashMap<String, Value>,
+    pub ip_stack: Vec<usize>,
+    pub fn_stack: Vec<String>,
+    pub temp_val: Value,
 }
 
 impl VM<'_> {
@@ -57,7 +60,7 @@ impl VM<'_> {
                 OpCode::Constant => {
                     let value = self.get_next_constant();
                     self.stack.push(value.clone());
-                    println!("Setting Constant {:#?}", value);
+                    //println!("Setting Constant {:#?}", value);
                 }
                 OpCode::Negate => {
                     let value = match self.stack.pop().unwrap() {
@@ -122,7 +125,7 @@ impl VM<'_> {
                             self.stack.push(
                                 self.globals
                                     .get(&var_name)
-                                    .expect("Identifier not defined !")
+                                    .expect(&format!("Identifier not defined ! {} ip: {}", var_name, self.ip))
                                     .clone(),
                             );
                         }
@@ -144,16 +147,18 @@ impl VM<'_> {
                 }
                 OpCode::GetLocalVar => {
                     let local_location = match self.get_next_constant() {
-                        Value::Number(x) => x as usize,
+                        Value::Number(x) => self.ip_stack.len() - 1 + (x as usize),
                         _ => panic!("Expected Number pointer for the local variable {:#?}", opcode)
                     };
+                    println!("getting local value of : {:#?}", self.stack[local_location].clone());
                     self.stack.push(self.stack[local_location].clone())
                 }
                 OpCode::SetLocalVar => {
                     let local_location = match self.get_next_constant() {
-                        Value::Number(x) => x as usize,
+                        Value::Number(x) => self.ip_stack.len() - 1 + (x as usize),
                         _ => panic!("Expected Number pointer for the local variable {:#?}", opcode)
                     };
+                    println!("setting local value of : {:#?}", self.stack[local_location].clone());
                     self.stack[local_location] = self.stack.last().unwrap().clone()
                 }
                 OpCode::JmpFalse => {
@@ -186,8 +191,39 @@ impl VM<'_> {
                     let steps = self.advance_and_read();
                     self.ip -= steps as usize;       
                 }
+                OpCode::PopStoreTmp => {
+                    println!(" Before POP \n {:#?}", self.stack);
+                    self.temp_val = self.stack.pop().unwrap();
+                }
+                OpCode::Call => {
+                    match self.temp_val.clone() {
+                        Value::Object(Object::Function { name, address, arity }) => {
+                            println!(" CALLING FUNCTION  {} with stack \n {:#?}", name.clone(),self.stack);
+                            let args_count = self.advance_and_read() as usize;
+                            if arity != args_count {
+                                panic!("Invalid number of sparamter call for function {}  stack: \n {:#?}", name, self.stack);
+                            }
+                            self.ip_stack.push(self.ip);
+                            self.ip = address;
+                            //println!("========= stack {:#?}", self.stack);
+                        }
+                        _ => panic!("Cannot call the following type of objects \n {:?}", self.temp_val)
+                    }
+                }
                 OpCode::Return => {
                     println!("Return");
+                    if self.ip_stack.len() > 0 {
+                        println!(" Returnning start with value {:#?} and stack: \n {:#?}", self.temp_val ,self.stack);
+                        self.ip = self.ip_stack.pop().unwrap();
+                        self.stack.push(self.temp_val.clone());
+                        println!("After return {:#?}", self.stack);
+                        self.temp_val = Value::Nil;
+                    } else {
+                        panic!("Must call return from inside of function IP: {}", self.ip);
+                    }
+                }
+                OpCode::Eof => {
+                    println!("Eof");
                     break;
                 }
                 _ => panic!("OpCode not implemented : {:#?}", opcode),
@@ -207,7 +243,6 @@ impl VM<'_> {
                 op, a, b
             );
         }
-
         match (a.clone(), b.clone()) {
             (Value::Number(x), Value::Number(y)) => match op {
                 "+" => self.stack.push(Value::Number(x + y)),

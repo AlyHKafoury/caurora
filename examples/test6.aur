@@ -1,4 +1,4 @@
 var a = 5;
-if (1 == 2) {print "if";}
+if (1 == 1) {print "if";}
 else {print "else";}
 print 2;

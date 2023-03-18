@@ -1,0 +1,7 @@
+var x = 0;
+for(var a = 0; a < 6; a = a + 1) {
+    print a;
+    print x;
+    x = x + 2;
+    print x;
+}

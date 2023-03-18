@@ -47,6 +47,7 @@ pub struct Compiler {
     scanner: Scanner<'static>,
     locals: Vec<Local>,
     scope_depth: usize,
+    func_returns: Vec<bool>,
 }
 
 impl Compiler {
@@ -70,6 +71,7 @@ impl Compiler {
             scanner,
             locals: Vec::<Local>::new(),
             scope_depth: 0,
+            func_returns: Vec::<bool>::new(),
         }
     }
 
@@ -79,7 +81,7 @@ impl Compiler {
             self.declaration();
         }
         // self.consume(TokenType::Eof, "Expect end of expression.");
-        self.memory.push(OpCode::Return);
+        self.memory.push(OpCode::Eof);
         self.memory.clone()
     }
 
@@ -196,6 +198,7 @@ impl Compiler {
             TokenType::LessEqual => self.binary(can_assign),
             TokenType::And => self.and_op(),
             TokenType::Or => self.or_op(),
+            TokenType::LeftParen => self.call_func(),
             _ => {
                 return None;
             }
@@ -219,6 +222,23 @@ impl Compiler {
             }
         }
         Some(())
+    }
+
+    fn call_func(&mut self) {
+        self.memory.push(OpCode::PopStoreTmp);
+
+        let mut args = 0;
+        while !self.match_token(TokenType::RightParen) {
+            self.expression();
+
+            if self.check(TokenType::Comma) {
+                self.advance();
+            }
+            args += 1;
+        }
+
+        self.memory.push(OpCode::Call);
+        self.memory.push_raw(args as u16);
     }
 
     fn identifier(&mut self, can_assign: bool) {
@@ -306,6 +326,7 @@ impl Compiler {
             TokenType::LessEqual => Precedence::Comparison,
             TokenType::And => Precedence::And,
             TokenType::Or => Precedence::Or,
+            TokenType::LeftParen => Precedence::Call,
             _ => Precedence::None,
         }
     }
@@ -405,6 +426,52 @@ impl Compiler {
         )
     }
 
+    fn param_declaration(&mut self) {
+        self.consume(TokenType::Identifier, "expect identifier after (.");
+        let local_var = self.previous;
+
+        self.local_var(local_var);
+
+        if self.check(TokenType::Comma) {
+            self.advance();
+        }
+    }
+
+    fn func_address_declar(&mut self) -> usize {
+        self.consume(TokenType::Identifier, "expect identifier after function.");
+        let local_var = self.previous;
+        let global_var = self.parse_identifier(self.previous);
+        let func_address = self.memory.get_memory_size() + 6;
+        
+        self.begin_scope();
+        let mut arity = 0;
+        self.consume(TokenType::LeftParen, "expect '(' after 'function identifier'.");
+        while !self.match_token(TokenType::RightParen) {
+            self.param_declaration();
+            arity += 1;
+        }
+
+        self.memory.push_constant(
+            OpCode::Constant,
+            Value::Object(Object::Function {
+                name: global_var.clone(),
+                address: func_address,
+                arity,
+            }),
+        );
+
+        if self.scope_depth - 1 > 0 {
+            self.local_var(local_var);
+        } else {
+            self.memory.push_constant(
+                OpCode::DefineGlobalVar,
+                Value::Object(Object::String(global_var)),
+            )
+        }
+
+        self.push_jmp(OpCode::Jmp)
+    }
+
     fn local_var(&mut self, name: Token) {
         if self.scope_depth == 0 {
             return;
@@ -419,10 +486,16 @@ impl Compiler {
     fn statement(&mut self) {
         if self.match_token(TokenType::Print) {
             self.print_statement();
+        } else if self.match_token(TokenType::Fun) {
+            self.function();
+        } else if self.match_token(TokenType::For) {
+            self.for_statement();
         } else if self.match_token(TokenType::If) {
             self.if_statement();
         } else if self.match_token(TokenType::While) {
             self.while_statement();
+        } else if self.match_token(TokenType::Return) {
+            self.return_statement();
         } else if self.match_token(TokenType::LeftBrace) {
             self.begin_scope();
             self.block();
@@ -432,20 +505,98 @@ impl Compiler {
         }
     }
 
+    fn return_statement(&mut self) {
+        self.func_returns.pop().unwrap();
+        self.func_returns.push(true);
+        if self.match_token(TokenType::SemiColon) {
+            println!("R1 ENDSCOPE CALLED {:#?}", self.previous);
+            self.return_scope();
+            self.memory.push(OpCode::Return);
+        } else {
+            self.expression();
+            self.memory.push(OpCode::PopStoreTmp);
+            self.consume(TokenType::SemiColon, "expected ; after return value");
+            println!("R2 ENDSCOPE CALLED {:#?}", self.previous);
+            self.return_scope();
+            self.memory.push(OpCode::Return);
+        }
+    }
+
+    fn function(&mut self) {
+        let func_end = self.func_address_declar();
+        self.func_returns.push(false);
+        println!("LOCALS ========== \n {:#?} \n LOCALS ==============", self.locals);
+        self.consume(TokenType::LeftBrace, "expect '{' after 'function parameters'.");
+
+        self.block();
+        if !self.func_returns.last().unwrap() {
+            self.end_scope();
+            self.memory.push(OpCode::Return);
+            println!("F ENDSCOPE CALLED {:#?}", self.previous);
+        }
+        self.func_returns.pop().unwrap();
+        self.patch_address(func_end);
+    }
+
+    fn for_statement(&mut self) {
+        self.begin_scope();
+        self.consume(TokenType::LeftParen, "expect '(' after 'for'.");
+        if self.match_token(TokenType::SemiColon) {
+            self.consume(TokenType::SemiColon, "expect ';' after for")
+        } else if self.match_token(TokenType::Var) {
+            self.var_declaration()
+        } else {
+            self.expression_statement()
+        }
+
+        let mut loop_start = self.memory.get_memory_size();
+        let mut exit_jmp: isize = -1;
+        if !self.match_token(TokenType::SemiColon) {
+            self.expression();
+            self.consume(TokenType::SemiColon, "expect ';' after for condition.");
+
+            exit_jmp = self.push_jmp(OpCode::JmpFalse) as isize;
+            self.memory.push(OpCode::Pop);
+        }
+
+        if !self.match_token(TokenType::RightParen) {
+            let body_jmp = self.push_jmp(OpCode::Jmp);
+            let steps = self.memory.get_memory_size();
+
+            self.expression();
+            self.memory.push(OpCode::Pop);
+            self.consume(TokenType::RightParen, "expect ')' after for clauses.");
+
+            self.push_loop(loop_start);
+            loop_start = steps;
+            self.patch_address(body_jmp);
+        }
+
+        self.statement();
+        self.push_loop(loop_start);
+
+        if exit_jmp != -1 {
+            self.patch_address(exit_jmp as usize);
+            self.memory.push(OpCode::Pop);
+        }
+
+        self.end_scope()
+    }
+
     fn if_statement(&mut self) {
         self.consume(TokenType::LeftParen, "expect '(' after 'if'.");
         self.expression();
         self.consume(TokenType::RightParen, "expect ')' after condition.");
         let thn_address = self.push_jmp(OpCode::JmpFalse);
+        self.memory.push(OpCode::Pop);
         self.statement();
         let else_address = self.push_jmp(OpCode::Jmp);
         self.patch_address(thn_address);
-
+        self.memory.push(OpCode::Pop);
         if self.match_token(TokenType::Else) {
             self.statement();
         }
         self.patch_address(else_address);
-        self.memory.push(OpCode::Pop);
     }
 
     fn while_statement(&mut self) {
@@ -454,7 +605,7 @@ impl Compiler {
         self.consume(TokenType::LeftParen, "expect '(' after 'if'.");
         self.expression();
         self.consume(TokenType::RightParen, "expect ')' after condition.");
-        
+
         let end_address = self.push_jmp(OpCode::JmpFalse);
         self.memory.push(OpCode::Pop);
         self.statement();
@@ -467,7 +618,11 @@ impl Compiler {
     fn push_loop(&mut self, loop_start: usize) {
         self.memory.push(OpCode::Loop);
         let steps = self.memory.get_memory_size() - loop_start + 1;
-        println!("==============jmping to {} {}", steps, self.memory.get_memory_size());
+        println!(
+            "==============jmping to {} {}",
+            steps,
+            self.memory.get_memory_size()
+        );
         self.memory.push_raw(steps as u16);
     }
 
@@ -493,7 +648,16 @@ impl Compiler {
         self.consume(TokenType::RightBrace, "expect '}' after block.")
     }
 
+    fn return_scope(&mut self) {
+        println!("current depth {}", self.scope_depth);
+        while self.locals.len() > 0 && self.locals.last().unwrap().depth > self.scope_depth - 1 {
+            self.memory.push(OpCode::Pop);
+            self.locals.pop();
+        }
+    }
+
     fn end_scope(&mut self) {
+        println!("current depth {}", self.scope_depth);
         self.scope_depth -= 1;
         while self.locals.len() > 0 && self.locals.last().unwrap().depth > self.scope_depth {
             self.memory.push(OpCode::Pop);

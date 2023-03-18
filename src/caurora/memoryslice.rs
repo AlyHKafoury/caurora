@@ -72,12 +72,13 @@ impl MemorySlice {
                 let opcode: OpCode = unsafe { std::mem::transmute(self.memory[i]) }; 
                 println!("{:0>4} -- {:#?} -- {:#?}", i, self.memory[i], opcode);
                 if opcode == OpCode::Constant || opcode == OpCode::DefineGlobalVar || opcode == OpCode::SetGlobalVar 
-                || opcode == OpCode::GetGlobalVar || opcode == OpCode::SetLocalVar || opcode == OpCode::GetLocalVar {
-                    constant = true
+                || opcode == OpCode::GetGlobalVar || opcode == OpCode::SetLocalVar || opcode == OpCode::GetLocalVar ||
+                opcode == OpCode::Jmp || opcode == OpCode::JmpFalse || opcode == OpCode::JmpTrue || opcode == OpCode::Loop {
+                    constant = true;
                 }
             }else {
                 constant = false;
-                let constant_value = self.get_constant(self.memory[i]).or_else(|| Some(Value::Nil)).unwrap();
+                let constant_value = self.get_constant(self.memory[i]).or_else(|| Some(Value::Raw)).unwrap();
                 println!("{:0>4} -- {:#?} -- {:#?}", i, self.memory[i], constant_value);
             }
         }

@@ -1,0 +1,12 @@
+function realadd(c,d) {
+    print c+d;
+    print "real add";
+}
+
+function add(a,b) {
+    realadd(a,b);
+    print a+b+5;
+    print "add";
+}
+
+add(1,2);
