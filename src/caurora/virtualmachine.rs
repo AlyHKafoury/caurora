@@ -17,7 +17,7 @@ pub struct VM<'a> {
     pub stack: Vec<Value>,
     pub globals: HashMap<String, Value>,
     pub ip_stack: Vec<usize>,
-    pub fn_stack: Vec<String>,
+    pub sp: usize,
     pub temp_val: Value,
 }
 
@@ -53,7 +53,7 @@ impl VM<'_> {
     }
 
     pub fn interpret(&mut self) -> InterpretResult {
-        println!("== Commands ==");
+        //println!("== Commands ==");
         loop {
             let opcode = unsafe { std::mem::transmute(self.advance_and_read()) };
             match opcode {
@@ -68,7 +68,7 @@ impl VM<'_> {
                         _ => panic!("Wrong Stack value for negate {:#?}", opcode),
                     };
                     self.stack.push(Value::Number(-value));
-                    println!("Setting Negate {:#?}", -value);
+                    //println!("Setting Negate {:#?}", -value);
                 }
                 OpCode::Add => self.binary_op("+"),
                 OpCode::Subtract => self.binary_op("-"),
@@ -109,6 +109,9 @@ impl VM<'_> {
                 OpCode::Pop => {
                     self.stack.pop();
                 }
+                OpCode::SetSP => {
+                    self.sp = self.stack.len()
+                }
                 OpCode::DefineGlobalVar => {
                     let var_name = self.get_next_constant();
                     match var_name {
@@ -147,26 +150,18 @@ impl VM<'_> {
                 }
                 OpCode::GetLocalVar => {
                     let local_location = match self.get_next_constant() {
-                        Value::Number(x) => if self.ip_stack.len() > 0 {
-                            self.ip_stack.len() - 1 + (x as usize)
-                        } else {
-                            x as usize
-                        },
+                        Value::Number(x) => self.sp - x as usize,
                         _ => panic!("Expected Number pointer for the local variable {:#?}", opcode)
                     };
-                    println!("getting local value of : {:#?}", self.stack[local_location].clone());
+                    //println!("getting local value of == {:#?}  id : {} stack : \n  {:#?} \n sp: {}", self.stack[local_location].clone(), local_location.clone(), self.stack, self.sp);
                     self.stack.push(self.stack[local_location].clone())
                 }
                 OpCode::SetLocalVar => {
                     let local_location = match self.get_next_constant() {
-                        Value::Number(x) => if self.ip_stack.len() > 0 {
-                            self.ip_stack.len() - 1 + (x as usize)
-                        } else {
-                            x as usize
-                        },
+                        Value::Number(x) => self.sp - x as usize,
                         _ => panic!("Expected Number pointer for the local variable {:#?}", opcode)
                     };
-                    println!("setting local value of : {:#?}", self.stack[local_location].clone());
+                    //println!("setting local value of : {:#?}", self.stack[local_location].clone());
                     self.stack[local_location] = self.stack.last().unwrap().clone()
                 }
                 OpCode::JmpFalse => {
@@ -200,13 +195,12 @@ impl VM<'_> {
                     self.ip -= steps as usize;       
                 }
                 OpCode::PopStoreTmp => {
-                    println!(" Before POP \n {:#?}", self.stack);
                     self.temp_val = self.stack.pop().unwrap();
                 }
                 OpCode::Call => {
                     match self.temp_val.clone() {
                         Value::Object(Object::Function { name, address, arity }) => {
-                            println!(" CALLING FUNCTION  {} with stack \n {:#?}", name.clone(),self.stack);
+                            //println!(" CALLING FUNCTION  {} with stack \n {:#?}", name.clone(),self.stack);
                             let args_count = self.advance_and_read() as usize;
                             if arity != args_count {
                                 panic!("Invalid number of sparamter call for function {}  stack: \n {:#?}", name, self.stack);
@@ -219,25 +213,26 @@ impl VM<'_> {
                     }
                 }
                 OpCode::Return => {
-                    println!("Return");
+                    //println!("Return");
                     if self.ip_stack.len() > 0 {
-                        println!(" Returnning start with value {:#?} and stack: \n {:#?}", self.temp_val ,self.stack);
+                        //println!(" Returnning start with value {:#?} and stack: \n {:#?}", self.temp_val ,self.stack);
                         self.ip = self.ip_stack.pop().unwrap();
                         self.stack.push(self.temp_val.clone());
-                        println!("After return {:#?}", self.stack);
                         self.temp_val = Value::Nil;
+                        self.sp = self.stack.len() - 1;
+                        //println!("After return {:#?} sp : {}", self.stack, self.sp);
                     } else {
                         panic!("Must call return from inside of function IP: {}", self.ip);
                     }
                 }
                 OpCode::Eof => {
-                    println!("Eof");
+                    //println!("Eof");
                     break;
                 }
                 _ => panic!("OpCode not implemented : {:#?}", opcode),
             }
         }
-        println!("== Commands End ==");
+        //println!("== Commands End ==");
         InterpretResult::InterpretOk
     }
 

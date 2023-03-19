@@ -40,16 +40,16 @@ fn run(script: & 'static str) -> () {
     let mut cmplr = Compiler::new(&script, main_memory, scanner);
     main_memory = cmplr.compile();
 
-    main_memory.debug("Main");
+    //main_memory.debug("Main");
     let mut vm = VM {
         memory: &main_memory,
         ip: 0,
         stack: Vec::<Value>::new(),
         globals: HashMap::<String, Value>::new(),
         ip_stack: Vec::<usize>::new(),
-        fn_stack: Vec::<String>::new(),
+        sp: 0,
         temp_val: Value::Nil,
     };
     vm.interpret();
-    vm.debug();
+    // vm.debug();
 }

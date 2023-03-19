@@ -29,6 +29,7 @@ pub enum OpCode {
     Panic,
     PopStoreTmp,
     Call,
+    SetSP,
     Eof,
     Return
 }

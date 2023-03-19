@@ -239,6 +239,7 @@ impl Compiler {
             args += 1;
         }
 
+        self.memory.push(OpCode::SetSP);
         self.memory.push(OpCode::Call);
         self.memory.push_raw(args as u16);
         self.func_returns -= 1;
@@ -277,7 +278,7 @@ impl Compiler {
         }
         for i in (0..self.locals.len()).rev() {
             if self.parse_identifier(self.locals[i].name) == self.parse_identifier(self.previous) {
-                return i.try_into().unwrap();
+                return (self.locals.len() - i).try_into().unwrap();
             }
         }
         -1
@@ -420,6 +421,7 @@ impl Compiler {
 
         if self.scope_depth > 0 {
             self.local_var(local_var);
+            self.memory.push(OpCode::SetSP);
             return;
         }
 
@@ -446,6 +448,7 @@ impl Compiler {
         let global_var = self.parse_identifier(self.previous);
         let func_address = self.memory.get_memory_size() + 6;
 
+        self.func_returns += 1;
         self.begin_scope();
         let mut arity = 0;
         self.consume(
@@ -527,7 +530,6 @@ impl Compiler {
 
     fn function(&mut self) {
         let func_end = self.func_address_declar();
-        self.func_returns += 1;
         self.consume(
             TokenType::LeftBrace,
             "expect '{' after 'function parameters'.",
@@ -604,7 +606,7 @@ impl Compiler {
 
     fn while_statement(&mut self) {
         let loop_start = self.memory.get_memory_size();
-        println!("LOOOP START {}", loop_start);
+        //println!("LOOOP START {}", loop_start);
         self.consume(TokenType::LeftParen, "expect '(' after 'if'.");
         self.expression();
         self.consume(TokenType::RightParen, "expect ')' after condition.");
@@ -621,11 +623,11 @@ impl Compiler {
     fn push_loop(&mut self, loop_start: usize) {
         self.memory.push(OpCode::Loop);
         let steps = self.memory.get_memory_size() - loop_start + 1;
-        println!(
-            "==============jmping to {} {}",
-            steps,
-            self.memory.get_memory_size()
-        );
+        // println!(
+        //     "==============jmping to {} {}",
+        //     steps,
+        //     self.memory.get_memory_size()
+        // );
         self.memory.push_raw(steps as u16);
     }
 
@@ -652,17 +654,17 @@ impl Compiler {
     }
 
     fn return_scope(&mut self) {
-        println!(
-            "func depth {} \n LOCALS \n {:#?}",
-            self.func_returns, self.locals
-        );
+        // println!(
+        //     "func depth {} \n LOCALS \n {:#?}",
+        //     self.func_returns, self.locals
+        // );
         for i in 0..self.locals.len()
         {
             if !(self.locals[i].depth > self.scope_depth - 1
-            || self.locals[i].func_depth == (self.func_returns - 1)) {
+            || self.locals[i].func_depth > (self.func_returns - 1)) {
                 break;
             }
-            println!("current depth POP 1");
+            // println!("current depth POP 1");
             self.memory.push(OpCode::Pop);
         }
     }
