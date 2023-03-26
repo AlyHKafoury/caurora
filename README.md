@@ -5,7 +5,7 @@ This is an educational general purpose programming language written in Rust
 
 ## Usage
 
-Install Latest rust at the time of writting 1.65 and run:
+Install Latest rust at the time of writing 1.65 and run:
 
 ```bash
 cargo run --release -- script.aur
